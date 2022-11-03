@@ -13,7 +13,7 @@ def add_template_repository_to_source_path
     at_exit { FileUtils.remove_entry(tempdir) }
     git clone: [
       "--quiet",
-      "https://github.com/excid3/jumpstart.git",
+      "https://github.com/coderberry/jumpstart.git",
       tempdir
     ].map(&:shellescape).join(" ")
 
@@ -41,15 +41,23 @@ def add_gems
   add_gem 'madmin'
   add_gem 'name_of_person', '~> 1.1'
   add_gem 'noticed', '~> 1.4'
+  add_gem 'omniauth-apple', '~> 1.2.2'
   add_gem 'omniauth-facebook', '~> 8.0'
   add_gem 'omniauth-github', '~> 2.0'
+  add_gem 'omniauth-google-oauth2', '~> 1.1.1'
   add_gem 'omniauth-twitter', '~> 1.4'
   add_gem 'pretender', '~> 0.3.4'
   add_gem 'pundit', '~> 2.1'
   add_gem 'sidekiq', '~> 6.2'
   add_gem 'sitemap_generator', '~> 6.1'
+  add_gem 'tailwindcss-rails'
   add_gem 'whenever', require: false
+  add_gem 'whoop', '~> 1.0.3'
   add_gem 'responders', github: 'heartcombo/responders', branch: 'main'
+
+  gem_group :development do
+    gem 'organize_gemfile', '~> 0.1'
+  end
 end
 
 def set_application_name
@@ -119,7 +127,7 @@ def default_to_esbuild
 end
 
 def add_javascript
-  run "yarn add local-time esbuild-rails trix @hotwired/stimulus @hotwired/turbo-rails @rails/activestorage @rails/ujs @rails/request.js"
+  run "yarn add daisyui local-time esbuild-rails trix @hotwired/stimulus @hotwired/turbo-rails @rails/activestorage @rails/ujs @rails/request.js"
 end
 
 def copy_templates
@@ -181,7 +189,7 @@ def add_multiple_authentication
 
   template = """
   env_creds = Rails.application.credentials[Rails.env.to_sym] || {}
-  %i{ facebook twitter github }.each do |provider|
+  %i{ apple facebook github google_oauth2 twitter }.each do |provider|
     if options = env_creds[provider]
       config.omniauth provider, options[:app_id], options[:app_secret], options.fetch(:options, {})
     end
@@ -195,6 +203,10 @@ def add_whenever
   run "wheneverize ."
 end
 
+def add_whoop
+  copy_file "config/initializers/whoop.rb"
+end
+
 def add_friendly_id
   generate "friendly_id"
   insert_into_file( Dir["db/migrate/**/*friendly_id_slugs.rb"].first, "[5.2]", after: "ActiveRecord::Migration")
@@ -204,12 +216,21 @@ def add_sitemap
   rails_command "sitemap:install"
 end
 
-def add_bootstrap
-  rails_command "css:install:bootstrap"
+def add_tailwind
+  rails_command "css:install:tailwind"
+end
+
+def add_daisy_ui
+  insert_into_file 'tailwind.config.js', ",\n  plugins: [require('daisyui')]", after: ']'
 end
 
 def add_announcements_css
-  insert_into_file 'app/assets/stylesheets/application.bootstrap.scss', '@import "jumpstart/announcements";'
+  insert_into_file 'app/assets/stylesheets/application.tailwind.css', '@import "jumpstart/announcements";'
+end
+
+def organize_gemfile
+  run "bundle binstubs organize_gemfile"
+  run "bin/organize_gemfile"
 end
 
 def add_esbuild_script
@@ -249,7 +270,7 @@ after_bundle do
   add_multiple_authentication
   add_sidekiq
   add_friendly_id
-  add_bootstrap
+  add_tailwind
   add_whenever
   add_sitemap
   add_announcements_css
@@ -258,6 +279,8 @@ after_bundle do
 
   # Make sure Linux is in the Gemfile.lock for deploying
   run "bundle lock --add-platform x86_64-linux"
+
+  organize_gemfile
 
   copy_templates
 
@@ -281,9 +304,25 @@ after_bundle do
   say
   say "  # Update config/database.yml with your database credentials"
   say
-  say "  rails db:create db:migrate"
+  say "  rails db:create"
   say "  rails g noticed:model"
   say "  rails g madmin:install # Generate admin dashboards"
-  say "  gem install foreman"
-  say "  bin/dev"
+  say "  rails db:migrate"
+  say
+  if yes?("Would you like to run those commands now? [y|n]", :green)
+    run "rails db:drop db:create"
+    run "rails g noticed:model"
+    run "rails g madmin:install"
+    run "rails db:migrate"
+  end
+
+  if yes?("Would you like to start the Rails application? [y|n]", :green)
+    say "Starting Rails application..."
+    run "gem install foreman"
+    run "bin/dev"
+  else
+    say "To start the Rails application, run:", :green
+    say "  gem install foreman"
+    say "  bin/dev"
+  end
 end
